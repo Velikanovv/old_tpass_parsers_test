@@ -78,7 +78,6 @@ def get_passes_old(driver, nomer, car, type):
         except:
             pass
     if fin_result != None:
-        pass_process(car, fin_result)
     return True
 
 
@@ -108,13 +107,7 @@ def get_passes_s(passes, host, port):
             try:
                 nomer = pas.name
                 ser = ''
-                driver.get('https://transport.mos.ru/gruzoviki/reestr/')
-                try:
-                    driver.find_element_by_xpath('//a[@class="cookies-close"]').click()
-                except:
-                    pass
-                iframe = driver.find_element_by_xpath('//div/iframe')
-                driver.switch_to.frame(iframe)
+                driver.get('https://reestr.ovga.mos.ru/')
                 try:
                     karti = driver.find_element_by_xpath('//img[@title="captcha"]')
                 except:
@@ -190,9 +183,9 @@ def search():
              '195.208.89.103', '195.208.92.20']
     ports = [51343, 55133, 54781, 51612, 52709, 46559, 57777, 53702]
     passes = Pass.objects.filter(ready=False)
-    for i in range(32):
+    for i in range(24):
         ri = random.randint(0, 7)
         a_count = passes.count()
-        count = int(a_count / 32) - 1
+        count = int(a_count / 24) - 1
         th = Thread(target=get_passes_s, args=(passes[i * count:(i * count) + count], hosts[ri], ports[ri],))
         th.start()
