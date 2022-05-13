@@ -11,7 +11,7 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 app.conf.beat_schedule = {
     'Проверка пропусков всех машин [17:00]': {
         'task': 'companies.tasks.parse_pass_all',
-        'schedule': crontab(hour=18, minute=35)
+        'schedule': crontab(hour=18, minute=50)
     },
 }
 
