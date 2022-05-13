@@ -1,0 +1,102 @@
+version: '3'
+
+services:
+  memcached:
+    image: docker.io/bitnami/memcached:1
+    hostname: mem
+    ports:
+      - '11211:11211'
+
+  firefox:
+    image: selenium/node-firefox:latest
+    shm_size: 2gb
+    depends_on:
+      - selenium-hub
+    environment:
+      - SE_NODE_SESSION_TIMEOUT=43200
+      - SE_NODE_MAX_SESSIONS=1000
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+
+  selenium-hub:
+    image: selenium/hub:latest
+    container_name: selenium-hub
+    environment:
+      - GRID_TIMEOUT=43200
+      - GRID_MAX_SESSION=100
+      - GRID_BROWSER_TIMEOUT=43200
+    ports:
+      - "4442:4442"
+      - "4443:4443"
+      - "4444:4444"
+
+  parsers:
+    user: root
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    command: gunicorn tpass_parsers.wsgi:application --bind 0.0.0.0:7000
+    volumes:
+      - .:/home/app/parsers
+    ports:
+      - 7000:7000
+    env_file:
+      - ./.env
+    restart: always
+
+  redis:
+    image: redis
+    restart: always
+
+  celery_worker:
+    restart: always
+    user: root
+    build: ./
+    command: celery -A tpass_parsers worker -l info
+    volumes:
+      - .:/home/app/parsers
+    env_file:
+      - ./.env
+    depends_on:
+      - memcached
+      - firefox
+      - selenium-hub
+      - parsers
+      - redis
+
+  celery_beat:
+    restart: always
+    user: root
+    build: ./
+    command: celery -A tpass_parsers beat -l info
+    volumes:
+      - .:/home/app/parsers
+    env_file:
+      - ./.env
+    depends_on:
+      - celery_worker
+      - memcached
+      - firefox
+      - selenium-hub
+      - parsers
+      - redis
+
+  flower:
+    restart: always
+    image: mher/flower
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379
+      - FLOWER_PORT=8888
+    ports:
+      - 8888:8888
+    links:
+      - redis
+      - celery_worker
+      - celery_beat
+    depends_on:
+      - redis
+
+volumes:
+  static_volume:

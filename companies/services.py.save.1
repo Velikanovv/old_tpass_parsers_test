@@ -1,0 +1,315 @@
+from .models import CompaniesCar, CompaniesCarfine, CompaniesCarpassperiod, CompaniesCarpassallowedzone, CompaniesCarpass, CarPassSystemStatus, CarFineStatus, CarHaveFinesStatus
+import requests
+import json
+from django.utils import timezone
+from datetime import datetime
+import os
+from django.core.mail import send_mail
+import re
+from decimal import *
+from django.db.models import Q
+
+def send_pass_mail(mail, subject, text, send_denis=False):
+    print('SSSSSSSSSMMMMMMMMMMMSSSSSSSSSSS')
+    if mail != '':
+        try:
+            print('SSSSSSSSSMMMMMMMMMMMSSSSSSSSSSS')
+            send_mail(
+                subject,
+                text,
+                'CRM Noreply <crm@t-pass.pro>',
+                [mail],
+                fail_silently=False,
+            )
+            print('SSSSSSSSSMMMMMMMMMMMSSSSSSSSSSS')
+            send_mail(
+                subject,
+                text,
+                'CRM Noreply <crm@t-pass.pro>',
+                ['noreply@tpas.pro'],
+                fail_silently=False,
+            )
+            if send_denis:
+                send_mail(
+                    subject,
+                    text,
+                    'CRM Noreply <crm@t-pass.pro>',
+                    ['dimitri.k@tpas.pro'],
+                    fail_silently=False,
+                )
+        except Exception as e:
+            print('DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD')
+            print(str(e))
+            send_mail(
+                subject,
+                str(e),
+                'CRM Noreply <crm@t-pass.pro>',
+                ['noreply@tpas.pro'],
+                fail_silently=False,
+            )
+
+def fine_proccess(car, fines):
+    if len(fines) > 0:
+        fines_id = []
+        car.have_fines = CarHaveFinesStatus.YES
+        car.save()
+        for fine in fines:
+            status = CarFineStatus.ACTIVE
+            amount = Decimal(fine.get('Summa'))
+            date_decis = datetime.strptime(fine.get('DateDecis'), "%Y-%m-%d %H:%M:%S")
+            koap_code = str(fine.get('KoAPcode'))
+            koap_text = str(fine.get('KoAPtext'))
+            num_post = str(fine.get('NumPost'))
+            date_post = datetime.strptime(fine.get('DatePost'), "%Y-%m-%d")
+            date_ssp = None
+            try:
+                date_ssp = datetime.strptime(fine.get('DateSSP'), "%Y-%m-%d")
+            except:
+                pass
+            c_fine = CompaniesCarfine.objects.filter(amount=amount, num_post=num_post, date_decis=date_decis, date_post=date_post, car=car)
+            if c_fine.exists():
+                c_fine = c_fine.first()
+                c_fine.date_ssp = date_ssp
+                c_fine.update_date = timezone.now()
+                c_fine.save()
+                fines_id.append(c_fine.pk)
+            else:
+                new_fine = CompaniesCarfine.objects.create(car=car, status=status, amount=amount, date_decis=date_decis, koap_code=koap_code, koap_text=koap_text, num_post=num_post, date_post=date_post, date_ssp=date_ssp, update_date=timezone.now())
+                fines_id.append(new_fine.pk)
+                text = 'Автомобиль ' + car.licence_plate + '\nОбнаружен штраф! ' + '\nДата нарушения: ' + str(new_fine.date_decis.strftime("%d.%m.%Y %H:%M")) + '\nДата постановления: ' + str(new_fine.date_post.strftime("%d.%m.%Y")) + '\nПостановления: ' + str(new_fine.num_post) + '\n\nhttp://crm.t-pass.pro/dashboard/sd/companies/all/' + str(car.company.pk) + '\n\nРезервная ссылка: ' + '\nhttp://crm.t-pass.pro/dashboard/sd/companies/all/' + str(car.company.pk)
+                subject = 'Обнаружен штраф (' + car.licence_plate + ')'
+                send_pass_mail(text=text, subject=subject, mail=car.company.user.contact_email)
+        CompaniesCarfine.objects.filter(Q(car=car) & ~Q(pk__in=fines_id)).update(status=CarFineStatus.ARCHIVE)
+    else:
+        if car.have_fines != CarHaveFinesStatus.NO:
+            car.have_fines = CarHaveFinesStatus.NO
+            CompaniesCarfine.objects.filter(status=CarFineStatus.ACTIVE, car=car).update(status=CarFineStatus.ARCHIVE, update_date=timezone.now())
+            car.save()
+
+
+def get_fines(car, proxy_host, proxy_port):
+    try_count = 0
+    while try_count < 20:
+        try:
+            try_count = try_count + 1
+            stsnum = car.ctc
+            regexp = re.compile(r'^(?P<num>[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}|[АВЕКМНОРСТУХ]{2}\d{3}|[АВЕКМНОРСТУХ]{2}\d{4}|\d{4}[АВЕКМНОРСТУХ]{2}|\d{3}D\d{3}|Т[АВЕКМНОРСТУХ]{2}\d{3}|[АВЕКМНОРСТУХ]\d{4}|\d{3}[АВЕКМНОРСТУХ]|К[АВЕКМНОРСТУХ]{2}\d{3}|С[АВЕКМНОРСТУХ]{2}\d{3})(?P<reg>\d{2,3})$')
+            licence_plate = car.licence_plate
+
+            match = regexp.match(licence_plate)
+            if match:
+                regreg = match['reg']
+                regnum = licence_plate.rstrip(regreg)
+                data = {
+                    'regnum': str(regnum),
+                    'regreg': str(regreg),
+                    'stsnum': str(stsnum)
+                }
+                proxies = {
+                    'http': proxy_host + ':' + proxy_port,
+                    'https': proxy_host + ':' + proxy_port
+                }
+                print(proxies)
+                print('POOOOOOOOOOOOOOOOOST')
+
+                res = requests.post('https://xn--b1afk4ade.xn--90adear.xn--p1ai/proxy/check/fines', data=data)
+                json = res.json()
+                print(res)
+                print(json)
+                code = 0
+                try:
+                    code = int(json.get('code'))
+                except:
+                    pass
+
+                if code == 200:
+                    fines = json.get('data')
+                    fine_proccess(car=car, fines=fines)
+                else:
+                    print(res)
+                break
+            else:
+                car.have_fines = CarHaveFinesStatus.NONE
+                car.save(update_fields=['have_fines'])
+                break
+        except Exception as e:
+            print(e)
+
+def pass_process(car, passes):
+    for pas in passes:
+        if car.licence_plate.upper() == pas.get('grz').upper():
+            number = pas.get('number')
+            allowed_zone = CompaniesCarpassallowedzone.objects.filter(name=pas.get('allowedzona'))
+            if not allowed_zone.exists():
+                allowed_zone = CompaniesCarpassallowedzone.objects.create(
+                    name=pas.get('allowedzona'))
+            else:
+                allowed_zone = allowed_zone.first()
+            period = CompaniesCarpassperiod.objects.filter(name=pas.get('typepassvalidityperiod'))
+            if not period.exists():
+                period = CompaniesCarpassperiod.objects.create(
+                    name=pas.get('typepassvalidityperiod'))
+            else:
+                period = period.first()
+            status = 1
+            if pas.get('passstatus') == 'Аннулирован':
+                status = 0
+            cancelled_date = None
+            if pas.get('datecancellation') != '':
+                cancelled_date = datetime.strptime(pas.get('datecancellation'), "%d.%m.%Y %H:%M")
+            start_date = datetime.strptime(pas.get('startdate'), "%d.%m.%Y %H:%M")
+            stop_date = datetime.strptime(pas.get('validitydate'), "%d.%m.%Y %H:%M")
+            description = 'Описание отсутствует'
+            date_now = datetime.now()
+            days_left = 0
+            if stop_date < date_now:
+                system_status = CarPassSystemStatus.ARCHIVE
+                if status == 0:
+                    description = 'Пропуск был аннулирован'
+                else:
+                    description = 'Закончился срок действия'
+            else:
+                if status == 0:
+                    system_status = CarPassSystemStatus.DANGER
+                    description = 'Пропуск аннулирован'
+                else:
+                    days_left = int((stop_date - date_now).total_seconds() // (60 * 60 * 24))
+                    if days_left <= 30:
+                        system_status = CarPassSystemStatus.DOUBLE_WARNING
+                        description = 'Заканчивается срок действия'
+                    elif days_left <= 65:
+                        system_status = CarPassSystemStatus.WARNING
+                        description = 'Заканчивается срок действия'
+                    else:
+                        system_status = CarPassSystemStatus.OK
+                        description = 'Пропуск действителен'
+
+            if not CompaniesCarpass.objects.filter(number=pas.get('number')).exists():
+                CompaniesCarpass.objects.create(number=number, status=status, start_date=start_date,
+                                                stop_date=stop_date, cancelled_date=cancelled_date,
+                                                system_status=system_status,
+                                                description=description,
+                                                update_date=timezone.now(),
+                                                allowed_zone=allowed_zone,
+                                                period=period, car=car)
+                if start_date.date() >= date_now.date():
+                    text = 'Автомобиль ' + car.licence_plate + '\nВыпущен пропуск ' + number + '\nЗона: ' + str(allowed_zone.name) + '\nПериод: ' + str(period.name) + '\n\nhttp://crm.t-pass.pro/dashboard/sd/companies/all/' + str(car.company.pk) + '\n\nРезервная ссылка: ' + '\n\nhttp://62.84.124.35/dashboard/sd/companies/all/' + str(car.company.pk)
+                    subject = 'Выпущен пропуск (' + car.licence_plate + ', ' + number + ')'
+                    send_pass_mail(car.company.user.contact_email, subject, text, send_denis=True)
+                if not stop_date < date_now:
+                    if status == 0 and cancelled_date.date() == timezone.now().date():
+                        text = 'Автомобиль ' + car.licence_plate + \
+                            '\nПропуск ' + number + ' аннулирован ' + '\n\nhttp://crm.t-pass.pro/dashboard/sd/companies/all/' + str(car.company.pk) + '\n\nРезервная ссылка: ' + '\n\nhttp://62.84.124.35/dashboard/sd/companies/all/' + str(car.company.pk)
+                        subject = 'Пропуск аннулирован (' + car.licence_plate + ', ' + number + ')'
+                        send_pass_mail(text=text, subject=subject, mail=car.company.user.contact_email)
+                    elif status == 1 and days_left < 65:
+                        text = 'Автомобиль ' + car.licence_plate + \
+                            '\nДействие пропуска ' + number + ' закончится через ' \
+                            + str(days_left) + ' дней.' + '\n\nhttp://crm.t-pass.pro/dashboard/sd/companies/all/' + str(car.company.pk) + '\n\nРезервная ссылка: ' + '\n\nhttp://62.84.124.35/dashboard/sd/companies/all/' + str(car.company.pk)
+                        subject = 'Заканчивается срок действия (' + car.licence_plate + ', ' + number + ')'
+                        send_pass_mail(text=text, subject=subject, mail=car.company.user.contact_email)
+            else:
+                c_pas = CompaniesCarpass.objects.filter(number=number).first()
+                if c_pas.system_status != CarPassSystemStatus.ARCHIVE:
+                    c_pas.status = status
+                    c_pas.start_date = start_date
+                    c_pas.stop_date = stop_date
+                    c_pas.cancelled_date = cancelled_date
+                    c_pas.system_status = system_status
+                    c_pas.description = description
+                    c_pas.update_date = timezone.now()
+                    c_pas.allowed_zone = allowed_zone
+                    c_pas.period = period
+                    c_pas.car = car
+                    c_pas.save()
+                    if not stop_date < date_now:
+                        if status == 0 and cancelled_date.date() == timezone.now().date():
+                            text = 'Автомобиль ' + car.licence_plate + \
+                                '\nПропуск ' + number + ' аннулирован ' + '\n\nhttp://crm.t-pass.pro/dashboard/sd/companies/all/' + str(car.company.pk)
+                            subject = 'Пропуск аннулирован (' + car.licence_plate + ', ' + number + ')'
+                            send_pass_mail(text=text, subject=subject, mail=car.company.user.contact_email)
+                        elif status == 1 and days_left == 65:
+                            text = 'Автомобиль ' + car.licence_plate + \
+                                '\nДействие пропуска ' + number + ' закончится через ' \
+                                + str(days_left) + ' дней.' + '\n\nhttp://crm.t-pass.pro/dashboard/sd/companies/all/' + str(car.company.pk)
+                            subject = 'Заканчивается срок действия (' + car.licence_plate + ', ' + number + ')'
+                            send_pass_mail(text=text, subject=subject, mail=car.company.user.contact_email)
+                        elif status == 1 and days_left == 30:
+                            text = 'Автомобиль ' + car.licence_plate + \
+                                '\nДействие пропуска ' + number + ' закончится через ' \
+                                + str(days_left) + ' дней.' + '\n\nhttp://crm.t-pass.pro/dashboard/sd/companies/all/' + str(car.company.pk)
+                            subject = 'Заканчивается срок действия (' + car.licence_plate + ', ' + number + ')'
+                            send_pass_mail(text=text, subject=subject, mail=car.company.user.contact_email)
+    return True
+
+def get_passes(driver, nomer, car, type):
+    fin_result = None
+    while True:
+        try:
+            ser = ''
+            driver.get('https://transport.mos.ru/gruzoviki/reestr/')
+            try:
+                driver.find_element_by_xpath('//a[@class="cookies-close"]').click()
+            except:
+                pass
+            iframe = driver.find_element_by_xpath('//div/iframe')
+            driver.switch_to.frame(iframe)
+            try:
+                karti = driver.find_element_by_xpath('//img[@title="captcha"]')
+            except:
+                karti = ''
+            try:
+                sip_token = driver.find_element_by_xpath(
+                    '//input[@id="sip_search__token"]').get_attribute('value')
+            except:
+                sip_token = ''
+            karti.screenshot(nomer + ".png")
+            files = {"file": open(nomer + ".png", "rb")}
+            kuku = 0
+            while (True):
+                args = {"key": "9e760cab5ce862403499c82b017d324c"}
+                data = requests.post('http://rucaptcha.com/in.php', files=files, data=args).text
+
+                while (True):
+                    zala = requests.get(
+                        'http://rucaptcha.com/res.php?key=9e760cab5ce862403499c82b017d324c&action=get&id=%s' %
+                        data.split('|')[1]).text
+                    if ('OK' in zala):
+                        kuku = 1
+                        break
+                    if (zala == 'ERROR_CAPTCHA_UNSOLVABLE'):
+                        break
+                if (kuku == 1):
+                    break
+            os.remove(nomer + ".png")
+            otvet_ubil = zala.split('|')[1].strip()
+
+            driver.find_element_by_xpath('//input[@id="sip_search_captcha"]').send_keys(otvet_ubil)
+            driver.find_element_by_xpath('//input[@id="sip_search_grz"]').send_keys(nomer)
+            likl = driver.find_element_by_xpath('//select/option')
+            driver.execute_script("arguments[0].value = arguments[1]", likl, "")
+            driver.find_element_by_xpath('//select/option').click()
+            driver.find_element_by_xpath('//button[text()="Поиск"]').click()
+            try:
+                oshibka = driver.find_element_by_xpath('//div[@class="alert alert-danger"]').text
+            except:
+                oshibka = ''
+                file_izm = open('res.html', 'w', encoding='utf-8')
+                file_izm.write(driver.page_source)
+                file_izm.close()
+                spis = '},'.join(
+                    driver.page_source.split('var data = ')[-1].split(';')[0].replace("'", '"').split(
+                        '},')[:-1]) + '}]'
+                try:
+                    fin_result = json.loads(spis)
+                except:
+                    pass
+            if (oshibka == ''):
+                break
+        except:
+            pass
+    if fin_result != None:
+        pass_process(car, fin_result)
+    return True
+
+
