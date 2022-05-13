@@ -34,6 +34,7 @@ def get_passes_s(passes, host, port):
         while True:
             try:
                 nomer = pas.name
+                print('SEARCH - ' + pas.name)
                 ser = ''
                 driver.get('https://reestr.ovga.mos.ru/')
                 try:
@@ -93,6 +94,7 @@ def get_passes_s(passes, host, port):
                 if (oshibka == ''):
                     break
             except Exception as e:
+                print('WAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARN: ' + e)
                 pass
         if fin_result != None:
             if len(fin_result) > 0:
@@ -107,7 +109,7 @@ def search():
              '195.208.89.103', '195.208.92.20']
     ports = [51343, 55133, 54781, 51612, 52709, 46559, 57777, 53702]
     passes = Pass.objects.filter(ready=False)
-    for i in range(24):
+    for i in range(20):
         ri = random.randint(0, 7)
         a_count = passes.count()
         count = int(a_count / 24) - 1
