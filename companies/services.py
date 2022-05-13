@@ -30,7 +30,6 @@ def get_passes_s(passes, host, port):
                               desired_capabilities=DesiredCapabilities.FIREFOX, options=options)
 
     for pas in passes:
-        print('\nSEARCH: ' + pas.name)
         fin_result = None
         while True:
             try:
@@ -94,12 +93,8 @@ def get_passes_s(passes, host, port):
                 if (oshibka == ''):
                     break
             except Exception as e:
-                print(e)
                 pass
         if fin_result != None:
-            print('--------FIN RES START--------')
-            print(fin_result)
-            print('--------FIN  RES  END--------')
             if len(fin_result) > 0:
                 Car.objects.get_or_create(licence_plate=fin_result[0].get('grz').upper())
                 print('GRZ: ' + fin_result[0].get('grz').upper())
