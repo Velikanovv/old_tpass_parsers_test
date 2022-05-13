@@ -8,6 +8,8 @@ import json
 from threading import Thread
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 import os
+import random
+
 
 def get_passes_old(driver, nomer, car, type):
     fin_result = None
@@ -80,10 +82,7 @@ def get_passes_old(driver, nomer, car, type):
     return True
 
 
-
-
 def get_passes_s(passes, host, port):
-
     proxy_host = str(host)
     proxy_port = int(port)
     options = webdriver.FirefoxOptions()
@@ -99,7 +98,8 @@ def get_passes_s(passes, host, port):
     firefox_profile.update_preferences()
     options.profile = firefox_profile
 
-    driver = webdriver.Remote(command_executor='http://selenium-hub:4444/wd/hub', desired_capabilities=DesiredCapabilities.FIREFOX, options=options)
+    driver = webdriver.Remote(command_executor='http://selenium-hub:4444/wd/hub',
+                              desired_capabilities=DesiredCapabilities.FIREFOX, options=options)
 
     for pas in passes:
         print('\nSEARCH: ' + pas.name)
@@ -133,7 +133,8 @@ def get_passes_s(passes, host, port):
 
                     while (True):
                         zala = requests.get(
-                            'http://rucaptcha.com/res.php?key=9e760cab5ce862403499c82b017d324c&action=get&id=%s' % data.split('|')[1]).text
+                            'http://rucaptcha.com/res.php?key=9e760cab5ce862403499c82b017d324c&action=get&id=%s' %
+                            data.split('|')[1]).text
                         if ('OK' in zala):
                             kuku = 1
                             break
@@ -161,7 +162,9 @@ def get_passes_s(passes, host, port):
                     file_izm = open('res.html', 'w', encoding='utf-8')
                     file_izm.write(driver.page_source)
                     file_izm.close()
-                    spis = '},'.join(driver.page_source.split('var data = ')[-1].split(';')[0].replace("'", '"').split('},')[:-1]) + '}]'
+                    spis = '},'.join(
+                        driver.page_source.split('var data = ')[-1].split(';')[0].replace("'", '"').split('},')[
+                        :-1]) + '}]'
                     try:
                         fin_result = json.loads(spis)
                     except:
@@ -183,9 +186,13 @@ def get_passes_s(passes, host, port):
 
 
 def search():
+    hosts = ['45.145.88.150', '212.192.228.28', '109.94.210.138', '92.249.12.223', '45.150.61.128', '195.19.169.90',
+             '195.208.89.103', '195.208.92.20']
+    ports = [51343, 55133, 54781, 51612, 52709, 46559, 57777, 53702]
     passes = Pass.objects.filter(ready=False)
     for i in range(32):
+        ri = random.randint(0, 7)
         a_count = passes.count()
-        count = int(a_count/32)
-        th = Thread(target=get_passes_s, args=(passes[i*count:(i*count)+count], host, port))
+        count = int(a_count / 32) - 1
+        th = Thread(target=get_passes_s, args=(passes[i * count:(i * count) + count], hosts[ri], ports[ri],))
         th.start()
